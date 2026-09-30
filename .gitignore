@@ -1,0 +1,16 @@
+# Ortam değişkenleri (şifreler/anahtarlar) asla commit edilmez
+.env
+.env.*
+!.env-example
+
+# macOS
+.DS_Store
+
+# Editör/IDE
+.idea/
+.vscode/
+*.swp
+
+# Log ve geçici dosyalar
+*.log
+tmp/
