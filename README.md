@@ -2,11 +2,12 @@
 
 # Yüksek Performanslı WordPress Stack
 
-Bu depo, yüksek trafik için ayarlanmış bir WordPress altyapısını üç Compose varyantıyla sunar. Nginx önde, PHP-FPM arkada, veritabanı olarak MariaDB, nesne önbelleği olarak Redis çalışır. Tüm yapılandırma ilgili compose dosyasının içine gömülüdür.
+Bu depo, yüksek trafik için ayarlanmış bir WordPress altyapısını dört Compose varyantıyla sunar. Nginx önde, PHP-FPM arkada, veritabanı olarak MariaDB, nesne önbelleği olarak Redis çalışır. Tüm yapılandırma ilgili compose dosyasının içine gömülüdür.
 
 - `docker-compose.yml` herhangi bir Docker sunucusunda, Traefik veya Dokploy varsaymadan çalışır.
 - `docker-compose-lokal.yml` yerel geliştirme içindir.
 - `docker-compose-dokploy.yml` Dokploy üzerinde Traefik label'larıyla çalışır.
+- `docker-compose-coolify.yml` Coolify üzerinde çalışır. Domain Coolify arayüzünden gelir; Traefik label'ı yoktur, proxy label'larını Coolify basar.
 
 ## İçindekiler
 
@@ -44,6 +45,7 @@ Cloudflare (isteğe bağlı: CDN, WAF, TLS)
    |
 TLS sonlandırıcı veya doğrudan port
    |  Dokploy varyantı: Traefik (Let's Encrypt). nginx port yayınlamaz.
+   |  Coolify varyantı: Coolify proxy (Traefik). nginx port yayınlamaz; domain SERVICE_FQDN_NGINX
    |  Evrensel: nginx, host portu HTTP_PORT (varsayılan 80)
    |  Yerel: nginx, host portu HTTP_PORT (varsayılan 8080)
 nginx  ----------------------------  FastCGI cache (RAM, tmpfs)
@@ -55,7 +57,7 @@ mariadb (12.3 LTS)     redis (8)
 cron: WP-Cron'u her dakika çalıştıran yardımcı konteyner
 ```
 
-Dokploy varyantında dışarıya yalnızca Traefik açılır; `nginx` port yayınlamaz, Docker iç ağında 80'i `expose` eder. Evrensel varyant 80'i (veya `HTTP_PORT`), yerel varyant 8080'i yayınlar. Veritabanı ve Redis her varyantta dış dünyaya kapalıdır.
+Dokploy ve Coolify varyantlarında dışarıya yalnızca proxy açılır; `nginx` port yayınlamaz, Docker iç ağında 80'i `expose` eder. Evrensel varyant 80'i (veya `HTTP_PORT`), yerel varyant 8080'i yayınlar. Veritabanı ve Redis her varyantta dış dünyaya kapalıdır.
 
 ## Bileşenler ve sürümler
 
@@ -75,6 +77,7 @@ Dokploy varyantında dışarıya yalnızca Traefik açılır; `nginx` port yayı
 - Evrensel varyant: bir Docker sunucusu ve alan adı. TLS'i kendi reverse proxy'niz veya Cloudflare sonlandırabilir.
 - Yerel varyant: Docker çalışan bir makine. Alan adı gerekmez.
 - Dokploy varyantı: Dokploy kurulu bir sunucu (dedicated önerilir) ve alan adı
+- Coolify varyantı: Coolify kurulu bir sunucu ve alan adı. Domain'i Coolify arayüzünden nginx servisine yazın. Traefik label eklemeyin.
 - Cloudflare hesabı üretimde önerilir, zorunlu değildir
 - Üretimde yeterli RAM (en az 8 GB, yüksek trafik için 32 GB ve üzeri). Yerel varsayılanlar dizüstü bilgisayara göredir.
 
@@ -86,9 +89,9 @@ docker compose version
 
 ## Compose varyantları
 
-Üç dosya aynı servisleri ve aynı performans ayarlarını taşır (FastCGI cache, 404 negatif önbellek, OPcache/JIT, Redis, MariaDB, `wp-login` hız sınırı, cron, phpredis). Fark, nasıl yayınlandıkları ve bellek varsayılanlarıdır.
+Dört dosya aynı servisleri ve aynı performans ayarlarını taşır (FastCGI cache, 404 negatif önbellek, OPcache/JIT, Redis, MariaDB, `wp-login` hız sınırı, cron, phpredis). Fark, nasıl yayınlandıkları ve bellek varsayılanlarıdır.
 
-Aynı anda yalnızca bir varyant çalıştırın. Üç dosyada da proje adı `name: wp` olduğu için volume ve konteyner adları ortaktır; ikisini birden ayağa kaldırmak çakışır.
+Aynı anda yalnızca bir varyant çalıştırın. Dört dosyada da (`docker-compose.yml`, `docker-compose-lokal.yml`, `docker-compose-dokploy.yml`, `docker-compose-coolify.yml`) proje adı `name: wp` olduğu için volume ve konteyner adları ortaktır; ikisini birden ayağa kaldırmak çakışır.
 
 ### docker-compose.yml — evrensel
 
@@ -121,6 +124,20 @@ docker compose -f docker-compose-dokploy.yml up -d
 ```
 
 Dokploy panelinde **Domains** sekmesi (Service: `nginx`, Port: `80`, HTTPS: açık, Certificate: Let's Encrypt) aynı yönlendirmeyi kurar. **Label'larla birlikte kullanmayın:** aynı alan adı için iki tanım Traefik'te çakışır. Domains sekmesini tercih ederseniz compose'daki Traefik label'larını kaldırın.
+
+### docker-compose-coolify.yml — Coolify
+
+Coolify'de **New Resource** → **Docker Compose**. Git kaynağında bu dosyayı base directory ile seçin; Docker Compose Empty ise içeriği yapıştırın. Herkese açık servis `nginx`'tir. Domain'i Coolify arayüzünden nginx servisine yazın; Coolify deploy öncesi `SERVICE_FQDN_NGINX` (alan adı) ve `SERVICE_URL_NGINX` (`https://` dahil) değerlerini doldurur. `WP_HOME` ve `WP_SITEURL` bu URL'den gelir. `server_name` ise `SERVICE_FQDN_NGINX` olur.
+
+Host portu yayınlanmaz; nginx yalnızca `expose: ["80"]` eder. Traefik label eklemeyin. Coolify proxy label'larını kendisi basar. Dokploy dosyasındaki label'ları Coolify'de kullanmayın: giriş noktası adları farklıdır (`websecure` ile Coolify'nin `http` / `https` girişleri çakışır). `coolify` external network'ünü de elle eklemeyin.
+
+`DOMAIN` bu varyantta gerekmez. MariaDB, Redis, WordPress ve cron içerde kalır; onlara domain verilmez.
+
+```bash
+docker compose -f docker-compose-coolify.yml up -d
+```
+
+Bu komut Coolify dışında ancak `SERVICE_URL_NGINX` ve `SERVICE_FQDN_NGINX` ortamda tanımlıysa anlamlıdır. Asıl yol Coolify arayüzüdür.
 
 ## Kurulum
 
@@ -194,19 +211,32 @@ Dokploy'un **Domains** sekmesi (Service: `nginx`, Port: `80`, HTTPS: açık, Cer
 
 Label'ların çalışması için stack'in Traefik ile ortak bir Docker ağında olması gerekir (Dokploy'un yönettiği proxy ağı gibi).
 
+### Coolify
+
+Bu adımlar yalnızca `docker-compose-coolify.yml` içindir. Evrensel, yerel ve Dokploy adımları olduğu gibi kalır.
+
+1. Coolify'de **New Resource** → **Docker Compose** seçin. Git ile geliyorsa base directory'yi bu dosyanın bulunduğu dizin yapın ve compose konumunu `docker-compose-coolify.yml` verin. Docker Compose Empty ise dosya içeriğini yapıştırın.
+2. Herkese açık servis `nginx` olsun. Domain'i Coolify arayüzünden nginx servisinin domain alanına yazın. Coolify, `SERVICE_FQDN_NGINX` ve `SERVICE_URL_NGINX` değerlerini deploy öncesi kendisi doldurur. Bu değişkenleri elle ortam dosyasına yazmayın.
+3. Port yayınlamayın. Traefik label eklemeyin; Coolify proxy label'larını kendisi basar. Dokploy dosyasındaki label'ları Coolify'de kullanmayın: giriş noktası adları farklıdır ve çakışır.
+4. **Environment** sekmesine veritabanı şifrelerini ve bellek ayarlarını girin. `DOMAIN` ve `HTTP_PORT` bu varyantta kullanılmaz. `WP_HOME` ve `WP_SITEURL`, Coolify'nin `SERVICE_URL_NGINX` değerinden gelir.
+5. **Deploy** düğmesine basın.
+6. Alan adını tarayıcıda açıp WordPress kurulum sihirbazını tamamlayın.
+7. Yönetim panelinden **Redis Object Cache** eklentisini kurun ve **Enable Object Cache** seçeneğini etkinleştirin.
+8. Cloudflare kullanıyorsanız DNS kaydını turuncu buluta alın ve SSL/TLS modunu **Full (strict)** yapın. Sertifikayı Coolify proxy üretir.
+
 ## Ortam değişkenleri
 
 | Değişken | Varsayılan | Açıklama |
 |---|---|---|
-| `DOMAIN` | yok (evrensel ve Dokploy'da zorunlu) | Sitenin alan adı (protokolsüz, örn. `site.com`). Nginx `server_name` ve `WP_HOME`/`WP_SITEURL` için kullanılır. Traefik `Host()` kuralı yalnızca Dokploy varyantındadır. Yerelde isteğe bağlıdır; verilmezse `server_name` `localhost` olur |
-| `HTTP_PORT` | evrensel `80`, yerel `8080` | Nginx'in host'a yayınladığı port. Dokploy varyantı port yayınlamaz, bu değişken orada kullanılmaz |
+| `DOMAIN` | yok (evrensel ve Dokploy'da zorunlu) | Sitenin alan adı (protokolsüz, örn. `site.com`). Nginx `server_name` ve `WP_HOME`/`WP_SITEURL` için kullanılır. Traefik `Host()` kuralı yalnızca Dokploy varyantındadır. Yerelde isteğe bağlıdır; verilmezse `server_name` `localhost` olur. Coolify varyantında kullanılmaz; domain Coolify arayüzünden nginx servisine yazılır |
+| `HTTP_PORT` | evrensel `80`, yerel `8080` | Nginx'in host'a yayınladığı port. Dokploy ve Coolify varyantları port yayınlamaz; `HTTP_PORT` Coolify'de kullanılmaz |
 | `DB_NAME` | `wordpress` | Veritabanı adı |
 | `DB_USER` | `wpuser` | Veritabanı kullanıcısı |
-| `DB_PASSWORD` | evrensel/Dokploy: yok (zorunlu). Yerel: `localpass` | Kullanıcı şifresi |
-| `DB_ROOT_PASSWORD` | evrensel/Dokploy: yok (zorunlu). Yerel: `localroot` | MariaDB root şifresi |
-| `DB_BUFFER_POOL` | evrensel/Dokploy `4G`, yerel `512M` | InnoDB buffer pool boyutu. `.env-example` üretim örneği `16G` yazar |
-| `PHP_MAX_CHILDREN` | evrensel/Dokploy `50`, yerel `8` | Aynı anda çalışabilecek PHP-FPM işçi sayısı. `.env-example` üretim örneği `80` yazar |
-| `REDIS_MAXMEMORY` | evrensel/Dokploy `1gb`, yerel `256mb` | Redis'in kullanabileceği en fazla bellek. `.env-example` üretim örneği `2gb` yazar |
+| `DB_PASSWORD` | evrensel/Dokploy/Coolify: yok (zorunlu). Yerel: `localpass` | Kullanıcı şifresi |
+| `DB_ROOT_PASSWORD` | evrensel/Dokploy/Coolify: yok (zorunlu). Yerel: `localroot` | MariaDB root şifresi |
+| `DB_BUFFER_POOL` | evrensel/Dokploy/Coolify `4G`, yerel `512M` | InnoDB buffer pool boyutu. `.env-example` üretim örneği `16G` yazar |
+| `PHP_MAX_CHILDREN` | evrensel/Dokploy/Coolify `50`, yerel `8` | Aynı anda çalışabilecek PHP-FPM işçi sayısı. `.env-example` üretim örneği `80` yazar |
+| `REDIS_MAXMEMORY` | evrensel/Dokploy/Coolify `1gb`, yerel `256mb` | Redis'in kullanabileceği en fazla bellek. `.env-example` üretim örneği `2gb` yazar |
 
 `.env-example` evrensel ve üretim değerlerini tutar. Yerel küçük örnek bir önceki bölümde.
 
@@ -232,7 +262,7 @@ REDIS_MAXMEMORY=2gb
 
 Yapılandırma `nginx_conf` adlı gömülü config içindedir.
 
-**FastCGI cache.** Önbellek `/var/cache/nginx` dizininde tutulur ve bu dizin evrensel ile Dokploy varyantında 2 GB'lık bir `tmpfs` olarak bağlanır. Yani önbellek diske değil RAM'e yazılır. Önbellek alanı 1800 MB ile sınırlıdır, 60 dakika erişilmeyen kayıtlar silinir. Yerel varyantta tmpfs 256 MB, önbellek üst sınırı 200 MB'dir. Başarılı yanıtlar (200, 301, 302) **10 dakika** geçerlidir. 404 yanıtları da negatif önbelleğe alınır ve **1 dakika** tutulur; böylece var olmayan adreslere gelen istek trafiği her seferinde PHP'ye ve veritabanına ulaşmaz. `fastcgi_cache_revalidate` açıktır.
+**FastCGI cache.** Önbellek `/var/cache/nginx` dizininde tutulur ve bu dizin evrensel, Dokploy ve Coolify varyantlarında 2 GB'lık bir `tmpfs` olarak bağlanır. Yani önbellek diske değil RAM'e yazılır. Önbellek alanı 1800 MB ile sınırlıdır, 60 dakika erişilmeyen kayıtlar silinir. Yerel varyantta tmpfs 256 MB, önbellek üst sınırı 200 MB'dir. Başarılı yanıtlar (200, 301, 302) **10 dakika** geçerlidir. 404 yanıtları da negatif önbelleğe alınır ve **1 dakika** tutulur; böylece var olmayan adreslere gelen istek trafiği her seferinde PHP'ye ve veritabanına ulaşmaz. `fastcgi_cache_revalidate` açıktır.
 
 **Önbelleğe alınmayan durumlar.** Aşağıdakilerden biri varsa istek doğrudan PHP'ye gider:
 
@@ -245,7 +275,7 @@ Yapılandırma `nginx_conf` adlı gömülü config içindedir.
 
 **Statik dosyalar.** Görseller, CSS, JS ve yazı tipleri 365 gün süreyle `immutable` olarak önbelleğe alınır. Erişim kaydı tutulmaz.
 
-**Gerçek IP ve HTTPS.** Nginx, özel ağ aralıklarından (`10.0.0.0/8`, `172.16.0.0/12`, `192.168.0.0/16`) gelen isteklerde `CF-Connecting-IP` başlığını gerçek ziyaretçi IP'si olarak kabul eder. Bu kural Dokploy'a özel değildir; Docker köprüsü, kurumsal bir reverse proxy veya Cloudflare için geçerlidir. Dokploy varyantında bu proxy Traefik'tir. İletilen `X-Forwarded-Proto` bilgisi PHP'ye `HTTPS` parametresi olarak geçirilir, böylece sonsuz yönlendirme döngüsü oluşmaz. Yerel varyant düz HTTP ile çalışır; başlık yoksa HTTPS kapalı kabul edilir.
+**Gerçek IP ve HTTPS.** Nginx, özel ağ aralıklarından (`10.0.0.0/8`, `172.16.0.0/12`, `192.168.0.0/16`) gelen isteklerde `CF-Connecting-IP` başlığını gerçek ziyaretçi IP'si olarak kabul eder. Bu kural Dokploy'a özel değildir; Docker köprüsü, kurumsal bir reverse proxy veya Cloudflare için geçerlidir. Dokploy ve Coolify varyantlarında bu proxy Traefik'tir; Coolify'de aynı kurallar Coolify proxy ve isteğe bağlı Cloudflare içindir. İletilen `X-Forwarded-Proto` bilgisi PHP'ye `HTTPS` parametresi olarak geçirilir, böylece sonsuz yönlendirme döngüsü oluşmaz. Yerel varyant düz HTTP ile çalışır; başlık yoksa HTTPS kapalı kabul edilir.
 
 **Güvenlik.** `xmlrpc.php` kapalıdır, nokta ile başlayan gizli dosyalar (`.well-known` hariç) engellenir, sunucu sürüm bilgisi gizlenir. `wp-login.php` istekleri hız sınırına (rate limit) tabidir; kaba kuvvet (brute-force) denemeleri hem güvenlik hem performans açısından sınırlandırılmıştır.
 
@@ -276,8 +306,8 @@ Biraz daha hız isterseniz `opcache.validate_timestamps = 0` yapabilirsiniz. Bu 
 | `AUTOMATIC_UPDATER_DISABLED` | `true` | Otomatik güncellemeler kapalı, kontrol sizde |
 | `WP_MEMORY_LIMIT` | `256M` | WordPress bellek sınırı |
 | `WP_REDIS_HOST` | `redis` | Redis Object Cache eklentisinin bağlanacağı adres |
-| `WP_HOME` | `https://$DOMAIN` (yerelde `http://localhost:$HTTP_PORT`) | Ziyaretçilere gösterilen site adresi |
-| `WP_SITEURL` | `https://$DOMAIN` (yerelde `http://localhost:$HTTP_PORT`) | WordPress dosyalarının adresi |
+| `WP_HOME` | `https://$DOMAIN` (yerelde `http://localhost:$HTTP_PORT`, Coolify'de `$SERVICE_URL_NGINX`) | Ziyaretçilere gösterilen site adresi |
+| `WP_SITEURL` | `https://$DOMAIN` (yerelde `http://localhost:$HTTP_PORT`, Coolify'de `$SERVICE_URL_NGINX`) | WordPress dosyalarının adresi |
 
 Ayrıca `X-Forwarded-Proto` başlığı `https` ise `$_SERVER['HTTPS']` değeri `on` yapılır.
 
@@ -312,7 +342,7 @@ Redis için bir sağlık kontrolü (healthcheck) tanımlıdır; `wordpress` serv
 
 - **SSL/TLS modu:** `Full (strict)`. `Flexible` seçilirse yönlendirme döngüsü oluşur.
 - **HTTP/3, Brotli, Early Hints:** açık.
-- Dokploy varyantında ilk Let's Encrypt sertifikası alınırken doğrulama takılırsa DNS kaydını geçici olarak gri buluta alın, sertifika geldikten sonra turuncuya çevirin. Alternatif olarak Cloudflare Origin Certificate kullanabilirsiniz. Evrensel varyantta sertifikayı kendi TLS sonlandırıcınız üretir.
+- Dokploy varyantında ilk Let's Encrypt sertifikası alınırken doğrulama takılırsa DNS kaydını geçici olarak gri buluta alın, sertifika geldikten sonra turuncuya çevirin. Alternatif olarak Cloudflare Origin Certificate kullanabilirsiniz. Coolify varyantında sertifikayı Coolify proxy üretir. Evrensel varyantta sertifikayı kendi TLS sonlandırıcınız üretir.
 - **HTML önbelleği (isteğe bağlı):** Cache Rule ile "Cache Everything" tanımlanabilir. Ancak `/wp-admin`, `/wp-login.php`, `/wp-json`, `/cart`, `/checkout`, `/my-account` yolları ve `wordpress_logged_in`, `woocommerce_` çerezleri için **Bypass** kuralı eklemek zorunludur. Yanlış kurulum, bir kullanıcının kişisel sayfasının bir başkasına gösterilmesine yol açabilir. Emin değilseniz bu adımı atlayın ya da Cloudflare APO kullanın.
 - Nginx önbelleği ile Cloudflare önbelleği birbirinden bağımsızdır. İçerik güncellendiğinde ikisi de eski kalabilir. Cloudflare eklentisi veya APO ile temizlemeyi otomatikleştirmeniz önerilir.
 
@@ -331,7 +361,7 @@ Hesaplama mantığı:
 
 - **`PHP_MAX_CHILDREN`:** PHP'ye ayırdığınız RAM'i, bir işçinin ortalama tüketimine (yaklaşık 60 MB) bölün.
 - **`DB_BUFFER_POOL`:** Sunucuda başka servisler de çalışıyorsa toplam RAM'in yaklaşık yüzde 25 ile 40'ı. Sunucu yalnızca veritabanına ayrılmışsa yüzde 60'a kadar çıkılabilir.
-- **Nginx cache:** Evrensel ve Dokploy varyantında 2 GB `tmpfs` de RAM'den düşer. Yerelde bu 256 MB'dir. Toplamı hesaplarken bunu unutmayın.
+- **Nginx cache:** Evrensel, Dokploy ve Coolify varyantında 2 GB `tmpfs` de RAM'den düşer. Yerelde bu 256 MB'dir. Toplamı hesaplarken bunu unutmayın.
 
 Toplam kullanım (buffer pool, PHP işçileri, Redis, tmpfs ve işletim sistemi) fiziksel RAM'i aşmamalıdır. Aksi halde sistem takas alanına (swap) düşer ve performans ciddi biçimde kötüleşir.
 
@@ -352,7 +382,7 @@ Kalıcı veri iki adlandırılmış volume içinde tutulur. Proje adı `wp` oldu
 - `wp_data`: WordPress dosyaları, tema, eklenti ve yüklemeler
 - `db_data`: MariaDB veri dizini
 
-Üç varyant aynı volume adlarını paylaşır. Birinden diğerine geçerken veri durur; aynı anda iki varyant bu volume'lere yazmamalıdır.
+Dört varyant aynı volume adlarını paylaşır. Birinden diğerine geçerken veri durur; aynı anda iki varyant bu volume'lere yazmamalıdır. `docker-compose-coolify.yml` de `name: wp` kullanır.
 
 Dokploy varyantında Dokploy'un **Backups** özelliğini veya aşağıdaki yöntemi kullanabilirsiniz.
 
@@ -378,6 +408,7 @@ Konteyner adını `docker ps` komutuyla öğrenebilirsiniz. Yedekleri sunucunun 
    - Evrensel: `docker compose up -d`
    - Yerel: `docker compose -f docker-compose-lokal.yml up -d`
    - Dokploy varyantında: panelden servisi yeniden **Deploy** edin, ya da `docker compose -f docker-compose-dokploy.yml up -d`
+   - Coolify varyantında: panelden servisi yeniden **Deploy** edin, ya da `SERVICE_URL_NGINX` ve `SERVICE_FQDN_NGINX` tanımlıyken `docker compose -f docker-compose-coolify.yml up -d`
 2. WordPress çekirdeği, tema ve eklentileri yönetim panelinden güncelleyin. Çekirdek sürüm, imajın yeni sürümüyle birlikte de yükselir.
 3. Güncellemeden önce mutlaka yedek alın.
 
@@ -412,7 +443,7 @@ docker stats
 
 ## Bilinmesi gerekenler
 
-- Compose dosyasındaki `$$` ifadeleri, Compose'un değişken yorumlamasından kaçış içindir. Nginx ve PHP kodlarını elle düzenlerken bu çift dolar işaretlerini tek dolara çevirmeyin. `${DOMAIN}` ve `${DB_PASSWORD}` gibi ortam değişkenleri tek dolarla kalır.
+- Compose dosyasındaki `$$` ifadeleri, Compose'un değişken yorumlamasından kaçış içindir. Nginx ve PHP kodlarını elle düzenlerken bu çift dolar işaretlerini tek dolara çevirmeyin. `${DOMAIN}`, `${DB_PASSWORD}`, Coolify varyantındaki `${SERVICE_FQDN_NGINX}` ve `${SERVICE_URL_NGINX}` gibi ortam değişkenleri tek dolarla kalır.
 - MariaDB 12.3'te `innodb_snapshot_isolation` ayarının varsayılanı `ON`'dur ([kaynak](https://mariadb.org/mariadb-server-12-3-lts-released/)). Bu davranış, eşzamanlı yazışmalara dayanan bazı eklentilerle uyumsuzluk yaratabilir; eklenti uyumluluğunu dağıtımdan önce test edin.
 - Statik dosyalarda uygulanan `immutable 365d` önbelleği, sürümlenmemiş tema CSS/JS dosyalarında eski içeriğin bir yıl boyunca sunulmasına yol açabilir. Tema güncellediğinizde dosya adlarını değiştirin (sürümlendirin) ya da ilgili önbellek süresini kısaltın.
 - Nginx açık kaynak sürümünde önbellek temizleme (purge) modülü yoktur. İçeriğin hızla yansıması için TTL değerini `fastcgi_cache_valid` satırından düşürebilirsiniz.
